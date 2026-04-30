@@ -1,0 +1,47 @@
+# Render Blueprint — declarative deploy cho LuminaDiary backend
+# Docs: https://render.com/docs/blueprint-spec
+#
+# Để dùng: vào Render Dashboard → New → Blueprint → chọn repo này.
+# Render sẽ tự build từ backend/Dockerfile và deploy.
+
+services:
+  - type: web
+    name: lumina-diary-backend
+    runtime: docker
+    plan: free                # đổi thành "starter" ($7/mo) nếu muốn no-sleep + scheduler ổn định
+    region: singapore         # gần VN nhất
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: SUPABASE_URL
+        sync: false           # nhập tay trong Render Dashboard (KHÔNG commit)
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_JWT_SECRET
+        sync: false
+      - key: SUPABASE_PHOTO_BUCKET
+        value: photos
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
+      - key: GEMINI_VISION_MODEL
+        value: gemini-2.5-flash-lite
+      - key: GEMINI_BLOG_MODEL
+        value: gemini-2.5-flash
+      - key: GEMINI_CHAT_MODEL
+        value: gemini-2.5-pro
+      - key: GEMINI_CHAT_FALLBACK_MODELS
+        value: gemini-2.5-flash,gemini-2.5-flash-lite
+      - key: GEMINI_VISION_FALLBACK_MODELS
+        value: gemini-2.5-flash,gemini-2.5-flash-lite
+      - key: CORS_ORIGINS
+        value: "*"
+      - key: LOG_LEVEL
+        value: info
+      - key: DAILY_PACKAGE_HOUR
+        value: "22"
+      - key: SCHEDULER_TIMEZONE
+        value: Asia/Ho_Chi_Minh

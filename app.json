@@ -1,0 +1,78 @@
+{
+  "expo": {
+    "name": "LuminaDiary",
+    "slug": "lumina-diary",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "luminadiary",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/images/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#FAF7F2"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.luminadiary.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "LuminaDiary cần truy cập camera để bạn lưu lại khoảnh khắc trong ngày.",
+        "NSPhotoLibraryUsageDescription": "LuminaDiary cần truy cập thư viện ảnh để chọn ảnh nhật ký.",
+        "NSLocationWhenInUseUsageDescription": "LuminaDiary đọc vị trí để gắn hashtag địa điểm cho ảnh."
+      }
+    },
+    "android": {
+      "package": "com.luminadiary.app",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#FAF7F2"
+      },
+      "softwareKeyboardLayoutMode": "resize",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ]
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-font",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Cho phép LuminaDiary truy cập camera."
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Cho phép LuminaDiary truy cập thư viện ảnh."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Cho phép LuminaDiary đọc vị trí khi chụp ảnh."
+        }
+      ],
+      "expo-web-browser",
+      "expo-secure-store"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "REPLACE_AFTER_eas_init"
+      }
+    }
+  }
+}

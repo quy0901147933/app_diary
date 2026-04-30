@@ -1,0 +1,45 @@
+{
+  "cli": {
+    "version": ">= 12.0.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "ios": {
+        "simulator": true
+      },
+      "channel": "development"
+    },
+    "preview": {
+      "distribution": "internal",
+      "channel": "preview",
+      "ios": {
+        "resourceClass": "m-medium",
+        "simulator": false
+      },
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_AI_API_BASE_URL": "https://lumina-diary-backend.onrender.com",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://nxtkdymcaiqyrjfikzzt.supabase.co"
+      }
+    },
+    "production": {
+      "channel": "production",
+      "ios": {
+        "resourceClass": "m-medium"
+      },
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_AI_API_BASE_URL": "https://lumina-diary-backend.onrender.com",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://nxtkdymcaiqyrjfikzzt.supabase.co"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}
