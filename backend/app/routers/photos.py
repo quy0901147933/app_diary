@@ -58,6 +58,7 @@ async def post_comment(
         source_id=body.photo_id,
         sentiment_score=analysis.get("sentiment_score"),
         emotion_tag=analysis.get("emotion_tag"),
+        hidden_need=analysis.get("hidden_need"),
     )
 
     return CommentResponse(

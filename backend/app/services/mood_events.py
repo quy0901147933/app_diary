@@ -51,21 +51,23 @@ def record_mood_event(
     source_id: str | None,
     sentiment_score: Any,
     emotion_tag: Any,
+    hidden_need: Any = None,
 ) -> None:
     score = _coerce_score(sentiment_score)
     tag = _coerce_tag(emotion_tag)
     if score is None or tag is None:
         log.debug("skip mood event (invalid score/tag): %r %r", sentiment_score, emotion_tag)
         return
+    payload: dict[str, Any] = {
+        "user_id": user_id,
+        "source": source,
+        "source_id": source_id,
+        "sentiment_score": score,
+        "emotion_tag": tag,
+    }
+    if isinstance(hidden_need, str) and hidden_need.strip():
+        payload["hidden_need"] = hidden_need.strip()[:500]
     try:
-        get_service_client().table("mood_events").insert(
-            {
-                "user_id": user_id,
-                "source": source,
-                "source_id": source_id,
-                "sentiment_score": score,
-                "emotion_tag": tag,
-            }
-        ).execute()
+        get_service_client().table("mood_events").insert(payload).execute()
     except Exception as exc:  # noqa: BLE001
         log.warning("failed to record mood event: %s", exc)

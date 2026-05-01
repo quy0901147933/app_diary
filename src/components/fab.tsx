@@ -1,5 +1,6 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, radius, shadow, spacing, typography } from '@/theme';
 
 type Props = {
@@ -13,12 +14,15 @@ type Props = {
 export function Fab({ icon, label, onPress, variant = 'primary', position = 'right' }: Props) {
   const isPrimary = variant === 'primary';
   const positionStyle = position === 'right' ? styles.right : styles.left;
+  const insets = useSafeAreaInsets();
+  const bottomOffset = Math.max(insets.bottom, spacing.md) + spacing.xl;
 
   return (
     <Pressable
       onPress={onPress}
       style={({ pressed }) => [
         styles.host,
+        { bottom: bottomOffset },
         positionStyle,
         isPrimary ? styles.primary : styles.secondary,
         pressed && styles.pressed,
@@ -41,7 +45,6 @@ export function Fab({ icon, label, onPress, variant = 'primary', position = 'rig
 const styles = StyleSheet.create({
   host: {
     position: 'absolute',
-    bottom: spacing.xl,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
     borderRadius: radius.full,

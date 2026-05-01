@@ -109,22 +109,40 @@ def _load_history(user_id: str) -> list[dict[str, Any]]:
 VALID_REACTIONS = {"love", "like", "haha", "dislike"}
 
 
-def _parse_chat_output(raw: str) -> tuple[str, str | None, Any, Any]:
+def _parse_chat_output(
+    raw: str,
+) -> tuple[str, str | None, Any, Any, str | None, str | None]:
+    """Parse the internal-monologue chat JSON.
+
+    Returns: (reply, reaction, sentiment_score, emotion_tag, hidden_need, strategy)
+    """
     raw = (raw or "").strip()
     try:
         obj = json.loads(raw)
     except json.JSONDecodeError:
         # Fallback: model didn't emit JSON — treat raw as plain reply.
-        return raw, None, None, None
+        return raw, None, None, None, None, None
+
+    thought = obj.get("thought") or {}
+    if not isinstance(thought, dict):
+        thought = {}
+
     reply = str(obj.get("reply") or "").strip()
     reaction = obj.get("react_to_user")
     if isinstance(reaction, str) and reaction.lower() in VALID_REACTIONS:
         reaction = reaction.lower()
     else:
         reaction = None
-    sentiment_score = obj.get("user_sentiment_score")
-    emotion_tag = obj.get("user_emotion_tag")
-    return reply, reaction, sentiment_score, emotion_tag
+
+    # Prefer nested thought block, fallback to top-level (for backward compat).
+    sentiment_score = thought.get("user_sentiment_score", obj.get("user_sentiment_score"))
+    emotion_tag = thought.get("user_emotion_tag", obj.get("user_emotion_tag"))
+    hidden_need_raw = thought.get("user_emotion_analysis")
+    strategy_raw = thought.get("response_strategy")
+    hidden_need = hidden_need_raw if isinstance(hidden_need_raw, str) else None
+    strategy = strategy_raw if isinstance(strategy_raw, str) else None
+
+    return reply, reaction, sentiment_score, emotion_tag, hidden_need, strategy
 
 
 async def reply_to(user_id: str, content: str) -> tuple[str, str | None]:
@@ -175,16 +193,24 @@ async def reply_to(user_id: str, content: str) -> tuple[str, str | None]:
         assert last_exc is not None
         raise last_exc
 
-    reply, user_reaction, sent_score, emotion_tag = _parse_chat_output(result.text or "")
+    (
+        reply,
+        user_reaction,
+        sent_score,
+        emotion_tag,
+        hidden_need,
+        strategy,
+    ) = _parse_chat_output(result.text or "")
     if not reply:
         reply = "Mình đang lắng nghe bạn đây."
     log.info(
-        "chat reply via %s (%d chars, react=%s sent=%s/%s)",
+        "chat reply via %s (%d chars, react=%s sent=%s/%s strategy=%.40s)",
         used_model,
         len(reply),
         user_reaction or "—",
         sent_score,
         emotion_tag,
+        strategy or "",
     )
 
     inserted = (
@@ -215,6 +241,7 @@ async def reply_to(user_id: str, content: str) -> tuple[str, str | None]:
         source_id=user_msg_id,
         sentiment_score=sent_score,
         emotion_tag=emotion_tag,
+        hidden_need=hidden_need,
     )
 
     return reply, user_reaction

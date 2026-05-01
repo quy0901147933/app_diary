@@ -116,8 +116,14 @@ async def analyze_photo(
 
     commentary = str(parsed.get("commentary", "")).strip()[:280]
     mood = str(parsed.get("mood", "")).strip()[:8]
-    sentiment_score = parsed.get("sentiment_score")
-    emotion_tag = parsed.get("emotion_tag")
+
+    # Internal monologue block (nested) — fallback to top-level for backward compat.
+    thought = parsed.get("thought") if isinstance(parsed.get("thought"), dict) else {}
+    sentiment_score = thought.get("sentiment_score", parsed.get("sentiment_score"))
+    emotion_tag = thought.get("emotion_tag", parsed.get("emotion_tag"))
+    hidden_need_raw = thought.get("scene_emotion_analysis")
+    hidden_need = hidden_need_raw if isinstance(hidden_need_raw, str) else None
+
     log.info(
         "vision via %s → %.40s... mood=%s tags=%s sent=%s/%s persona=%s",
         used_model,
@@ -134,6 +140,7 @@ async def analyze_photo(
         "hashtags": hashtags,
         "sentiment_score": sentiment_score,
         "emotion_tag": emotion_tag,
+        "hidden_need": hidden_need,
     }
 
 
