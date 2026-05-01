@@ -21,6 +21,7 @@ from supabase import Client
 
 from app.core.supabase_client import get_service_client
 from app.services._gemini_retry import with_retry
+from app.services.embeddings import embed_text
 from app.services.mood_events import record_mood_event
 from app.services.persona import build_persona_block, fetch_persona as _shared_fetch_persona
 
@@ -227,6 +228,61 @@ def _parse_chat_output(
     return reply, reaction, sentiment_score, emotion_tag, hidden_need, strategy
 
 
+async def _retrieve_emotional_memories(
+    user_id: str, query_text: str
+) -> tuple[str, list[float] | None]:
+    """Hybrid emotional RAG: embed the new message and pull the user's past
+    turns that semantically + emotionally resemble it.
+
+    Returns (formatted_block, embedding_for_reuse). The embedding is reused
+    when we later persist the user's row → only one embed API call per turn.
+    """
+    embedding = await embed_text(query_text)
+    if embedding is None:
+        return "", None
+
+    sb = get_service_client()
+    try:
+        res = sb.rpc(
+            "match_emotional_memories",
+            {
+                "p_user_id": user_id,
+                "p_query_embedding": embedding,
+                "p_match_count": 3,
+                "p_min_similarity": 0.55,
+            },
+        ).execute()
+    except Exception as exc:  # noqa: BLE001
+        log.warning("emotional-RAG search failed: %s", exc)
+        return "", embedding
+
+    rows = res.data or []
+    if not rows:
+        return "", embedding
+
+    lines: list[str] = []
+    for r in rows:
+        when = (r.get("created_at") or "")[:10]
+        emotion = r.get("emotion_tag") or "—"
+        score = r.get("sentiment_score")
+        score_str = f"{score}/10" if isinstance(score, (int, float)) else "—"
+        sim = r.get("similarity")
+        sim_str = f"{sim:.2f}" if isinstance(sim, (int, float)) else "—"
+        content_excerpt = (r.get("content") or "")[:140].replace("\n", " ")
+        need = (r.get("hidden_need") or "").strip()
+
+        seg = f"- [{when} · {emotion} · {score_str} · sim={sim_str}] \"{content_excerpt}\""
+        if need:
+            seg += f"\n    └ Lúc đó nhu cầu ẩn: {need[:100]}"
+        lines.append(seg)
+
+    block = (
+        "KÝ ỨC CẢM XÚC TƯƠNG TỰ (chỉ tham khảo để hiểu pattern, KHÔNG quote nguyên văn):\n"
+        + "\n".join(lines)
+    )
+    return block, embedding
+
+
 async def reply_to(user_id: str, content: str) -> tuple[str, str | None]:
     settings = get_settings()
     sb = get_service_client()
@@ -235,12 +291,15 @@ async def reply_to(user_id: str, content: str) -> tuple[str, str | None]:
     persona_block = _persona_directive(persona)
     rag = _build_rag_context(user_id)
     mood_timeline = _build_mood_timeline(user_id)
+    emotional_memories, query_embedding = await _retrieve_emotional_memories(user_id, content)
 
     system = CHAT_SYSTEM
     if persona_block:
         system = persona_block + "\n\n" + system
     if mood_timeline:
         system += "\n\n" + mood_timeline
+    if emotional_memories:
+        system += "\n\n" + emotional_memories
     if rag:
         system += "\n\nNGỮ CẢNH NGƯỜI DÙNG (chỉ tham khảo, không liệt kê):\n" + rag
 
@@ -315,10 +374,37 @@ async def reply_to(user_id: str, content: str) -> tuple[str, str | None]:
     )
 
     user_msg_id = None
+    assistant_msg_id = None
     if inserted.data:
-        user_row = next((r for r in inserted.data if r.get("role") == "user"), None)
-        if user_row:
-            user_msg_id = user_row.get("id")
+        for r in inserted.data:
+            if r.get("role") == "user":
+                user_msg_id = r.get("id")
+            elif r.get("role") == "assistant":
+                assistant_msg_id = r.get("id")
+
+    # Persist embedding + denormalized emotion metadata onto the user row so
+    # future emotional-RAG searches can filter without joining mood_events.
+    if user_msg_id and query_embedding is not None:
+        try:
+            update_payload: dict[str, Any] = {"embedding": query_embedding}
+            if isinstance(sent_score, (int, float)):
+                update_payload["sentiment_score"] = int(sent_score)
+            if isinstance(emotion_tag, str) and emotion_tag.strip():
+                update_payload["emotion_tag"] = emotion_tag.strip()
+            sb.table("chat_messages").update(update_payload).eq("id", user_msg_id).execute()
+        except Exception as exc:  # noqa: BLE001
+            log.warning("failed to attach embedding/emotion to %s: %s", user_msg_id, exc)
+
+    # Embed the assistant reply too (background-friendly: don't block, ignore failure).
+    if assistant_msg_id:
+        try:
+            assistant_emb = await embed_text(reply)
+            if assistant_emb is not None:
+                sb.table("chat_messages").update({"embedding": assistant_emb}).eq(
+                    "id", assistant_msg_id
+                ).execute()
+        except Exception as exc:  # noqa: BLE001
+            log.debug("assistant embed skipped: %s", exc)
 
     record_mood_event(
         user_id=user_id,
