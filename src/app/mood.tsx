@@ -39,7 +39,13 @@ export default function MoodScreen() {
         {query.isLoading ? (
           <View style={styles.center}>
             <ActivityIndicator color={colors.accent} />
-            <Text style={styles.hint}>Đang tổng hợp 7 ngày…</Text>
+            <Text style={styles.hint}>
+              Đang tổng hợp 7 ngày…
+              {'\n'}
+              <Text style={styles.hintMuted}>
+                Lần đầu mở có thể đợi ~30s nếu server vừa nghỉ.
+              </Text>
+            </Text>
           </View>
         ) : query.isError ? (
           <View style={styles.errorBox}>
@@ -98,7 +104,8 @@ const styles = StyleSheet.create({
   headerTitle: { ...typography.title, fontSize: 18, color: colors.textPrimary },
   scroll: { padding: spacing.lg, paddingBottom: spacing.xxxl },
   center: { paddingVertical: spacing.xxxl, alignItems: 'center', gap: spacing.md },
-  hint: { ...typography.bodySm, color: colors.textMuted },
+  hint: { ...typography.bodySm, color: colors.textMuted, textAlign: 'center', lineHeight: 20 },
+  hintMuted: { ...typography.caption, color: colors.textMuted },
   errorBox: {
     padding: spacing.xl,
     backgroundColor: colors.surface,
