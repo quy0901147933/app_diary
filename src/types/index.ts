@@ -71,6 +71,7 @@ export type Profile = {
   expo_push_token: string | null;
   last_seen_at: string | null;
   proactive_enabled: boolean;
+  mood_proactive_enabled: boolean;
   morning_hour: number;
   night_hour: number;
   quiet_start_hour: number;

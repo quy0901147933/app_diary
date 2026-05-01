@@ -6,6 +6,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
@@ -225,6 +226,25 @@ export default function SettingsScreen() {
             <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
           </Pressable>
 
+          <Text style={[styles.sectionTitle, { marginTop: spacing.xl }]}>Lumina chủ động</Text>
+          <View style={styles.toggleRow}>
+            <View style={styles.toggleCopy}>
+              <Text style={styles.toggleTitle}>Quan tâm khi anh có ngày tệ</Text>
+              <Text style={styles.toggleHint}>
+                Cho phép Lumina nhắn hỏi thăm khi cảm xúc anh thấp liên tục vài ngày qua.
+                Tin nhắn chào sáng, gói ngày, và quan tâm khẩn cấp vẫn hoạt động bình thường.
+              </Text>
+            </View>
+            <Switch
+              value={profile?.mood_proactive_enabled ?? true}
+              onValueChange={(v) =>
+                saveProfile.mutate({ mood_proactive_enabled: v })
+              }
+              trackColor={{ true: colors.accent, false: colors.border }}
+              thumbColor={colors.surface}
+            />
+          </View>
+
           <Text style={[styles.sectionTitle, { marginTop: spacing.xl }]}>Tài khoản</Text>
           <Pressable style={styles.linkRow} onPress={logout}>
             <Ionicons name="log-out-outline" size={20} color={colors.danger} />
@@ -322,4 +342,21 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   linkText: { ...typography.body, color: colors.textPrimary, flex: 1 },
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    backgroundColor: colors.surface,
+    padding: spacing.lg,
+    borderRadius: radius.lg,
+    marginBottom: spacing.sm,
+  },
+  toggleCopy: { flex: 1 },
+  toggleTitle: { ...typography.body, color: colors.textPrimary, fontWeight: '600' },
+  toggleHint: {
+    ...typography.caption,
+    color: colors.textMuted,
+    marginTop: 4,
+    lineHeight: 18,
+  },
 });

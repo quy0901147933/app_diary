@@ -77,6 +77,15 @@ KIND_BRIEF = {
         "Tránh sáo rỗng kiểu 'cố lên'. Có thể nhắc khéo 'mấy bữa nay anh hơi nặng nề' nhưng KHÔNG "
         "được tiết lộ điểm số / nói 'em thấy điểm sentiment của anh thấp'. Chỉ là cảm nhận."
     ),
+    "mood_crisis": (
+        "Đây là tin nhắn HỖ TRỢ KHẨN CẤP NHẸ NHÀNG khi người dùng đã trải qua giai đoạn cảm xúc "
+        "rất thấp kéo dài (≥1 tuần). Mục tiêu: cho người ấy biết KHÔNG MỘT MÌNH, đồng thời gửi 1 "
+        "thông tin đường dây hỗ trợ. KHÔNG được dùng các từ 'trầm cảm', 'tâm thần', 'có vấn đề'. "
+        "KHÔNG chẩn đoán. KHÔNG dùng tone hốt hoảng. Chỉ như một người bạn đặt tay lên vai. "
+        "Cấu trúc bắt buộc: (1) câu thừa nhận sự khó khăn ngắn, (2) thông tin số đường dây Việt Nam "
+        "1800-599-920 (24/7, MIỄN PHÍ, Trung tâm Sức khoẻ Tinh thần), (3) câu kết: 'em vẫn ở đây'. "
+        "Đặt thông tin số trong dấu ngoặc đơn để dễ đọc."
+    ),
 }
 
 # Cooldown: sau khi gửi mood_low nudge, đợi ít nhất 48h mới được gửi lần kế.
@@ -87,6 +96,16 @@ MOOD_LOW_WINDOW_DAYS = 3
 MOOD_LOW_AVG_THRESHOLD = 4.0
 # Tối thiểu phải có 2 ngày có dữ liệu để tránh false positive khi mới dùng app.
 MOOD_LOW_MIN_DAYS_WITH_DATA = 2
+
+# Crisis: nghiêm trọng hơn nhiều — 7 ngày trung bình < 3, cooldown 7 ngày.
+MOOD_CRISIS_WINDOW_DAYS = 7
+MOOD_CRISIS_AVG_THRESHOLD = 3.0
+MOOD_CRISIS_MIN_DAYS_WITH_DATA = 4
+MOOD_CRISIS_COOLDOWN_HOURS = 7 * 24
+
+# Reset mood_low cooldown nếu user reply trong 24h sau push với sentiment ≥ 6.
+FEEDBACK_RESET_WINDOW_HOURS = 24
+FEEDBACK_RESET_MIN_SCORE = 6
 
 
 def _proactive_directive(kind: str) -> str:
@@ -122,6 +141,12 @@ async def _generate_proactive(
             "Người dùng đã có cảm xúc thấp (mệt mỏi/áp lực/buồn) liên tục vài ngày qua "
             "và hôm nay chưa mở app. Hãy gửi MỘT câu thật dịu dàng (≤ 100 ký tự) để cho "
             "người ấy biết bạn đang nghĩ về họ. Đừng hỏi dồn, đừng khuyên giải."
+        ),
+        "mood_crisis": (
+            "Người dùng đã có cảm xúc rất thấp kéo dài 1 tuần qua. Hãy gửi tin nhắn 2-3 câu "
+            "(≤ 220 ký tự) THEO ĐÚNG cấu trúc: thừa nhận sự khó khăn → đường dây hỗ trợ "
+            "(1800-599-920 - 24/7) → 'em vẫn ở đây'. Tone như người bạn đặt tay lên vai, "
+            "không hốt hoảng, không chẩn đoán."
         ),
     }.get(kind, "Hãy nhắn một câu hỏi han nhẹ.")
 
@@ -332,8 +357,10 @@ def _evaluate_mood_low(sb: Client, user_id: str, now: datetime, tz_name: str) ->
 
 
 def _eligible_mood_low(profile: dict[str, Any], now: datetime, tz_name: str) -> bool:
-    """Same gates as _eligible(kind='inactivity') minus the 6h-silence rule,
-    plus a 48h cooldown specific to mood_low to avoid daily nagging."""
+    """Gates for low-mood nudges: base proactive rules + user opt-in for the
+    *emotional* probe specifically (mood_proactive_enabled), plus 48h cooldown."""
+    if profile.get("mood_proactive_enabled") is False:
+        return False
     if not _eligible(profile, now, "mood_low_base", tz_name):
         return False
     last_mood_at_str = profile.get("last_mood_proactive_at")
@@ -349,29 +376,111 @@ def _eligible_mood_low(profile: dict[str, Any], now: datetime, tz_name: str) -> 
     return True
 
 
+def _evaluate_mood_crisis(sb: Client, user_id: str, now: datetime, tz_name: str) -> bool:
+    """Crisis = 7-day window, ≥4 days with data, overall avg < 3."""
+    today_local = now.date()
+    earliest = today_local - timedelta(days=MOOD_CRISIS_WINDOW_DAYS - 1)
+
+    res = (
+        sb.table("mood_events")
+        .select("sentiment_score, created_at")
+        .eq("user_id", user_id)
+        .gte("created_at", earliest.isoformat())
+        .execute()
+    )
+    rows = res.data or []
+    if not rows:
+        return False
+
+    from collections import defaultdict
+    from zoneinfo import ZoneInfo
+
+    tz = ZoneInfo(tz_name)
+    grouped: dict[Any, list[int]] = defaultdict(list)
+    for row in rows:
+        score = row.get("sentiment_score")
+        created = row.get("created_at")
+        if not isinstance(score, (int, float)) or not isinstance(created, str):
+            continue
+        try:
+            local_day = (
+                datetime.fromisoformat(created.replace("Z", "+00:00"))
+                .astimezone(tz)
+                .date()
+            )
+        except ValueError:
+            continue
+        grouped[local_day].append(int(score))
+
+    if len(grouped) < MOOD_CRISIS_MIN_DAYS_WITH_DATA:
+        return False
+    daily_avgs = [sum(scores) / len(scores) for scores in grouped.values()]
+    overall_avg = sum(daily_avgs) / len(daily_avgs)
+    return overall_avg < MOOD_CRISIS_AVG_THRESHOLD
+
+
+def _eligible_mood_crisis(profile: dict[str, Any], now: datetime, tz_name: str) -> bool:
+    """Crisis ignores the user's mood-toggle opt-out — duty-of-care safety net.
+    But still respects quiet hours, push token, daily cap, and 7-day cooldown."""
+    if not _eligible(profile, now, "mood_crisis_base", tz_name):
+        return False
+    last_crisis_str = profile.get("last_mood_crisis_at")
+    if last_crisis_str:
+        try:
+            last_crisis = datetime.fromisoformat(last_crisis_str.replace("Z", "+00:00"))
+            if (now.astimezone(last_crisis.tzinfo) - last_crisis) < timedelta(
+                hours=MOOD_CRISIS_COOLDOWN_HOURS
+            ):
+                return False
+        except ValueError:
+            pass
+    return True
+
+
 async def run_mood_low_sweep() -> None:
-    """Once a day check whose 3-day mood is low and proactively nudge."""
+    """Daily sweep. Crisis check FIRST (overrides toggle), then mood_low.
+    A user receives at most ONE of the two per run.
+    """
     settings = get_settings()
     tz_name = settings.scheduler_timezone
     now = _now_local(tz_name)
     sb = get_service_client()
     res = sb.table("profiles").select("*").execute()
     profiles = res.data or []
-    sent = 0
+    crisis_sent = low_sent = 0
+    now_iso = datetime.utcnow().isoformat() + "Z"
+
     for profile in profiles:
-        if not _eligible_mood_low(profile, now, tz_name):
-            continue
         user_id = profile["id"]
-        if not _evaluate_mood_low(sb, user_id, now, tz_name):
+
+        # Tier 1 — crisis (duty of care, ignores user toggle but respects cooldown)
+        if _eligible_mood_crisis(profile, now, tz_name) and _evaluate_mood_crisis(
+            sb, user_id, now, tz_name
+        ):
+            persona = _fetch_persona(sb, user_id)
+            await _record_and_send(sb, profile, persona, "mood_crisis", tz_name)
+            sb.table("profiles").update(
+                {
+                    "last_mood_crisis_at": now_iso,
+                    # also stamp mood_low cooldown to avoid double-nudge same day
+                    "last_mood_proactive_at": now_iso,
+                }
+            ).eq("id", user_id).execute()
+            crisis_sent += 1
             continue
-        persona = _fetch_persona(sb, user_id)
-        await _record_and_send(sb, profile, persona, "mood_low", tz_name)
-        # Stamp cooldown after we attempted (regardless of push delivery).
-        sb.table("profiles").update(
-            {"last_mood_proactive_at": datetime.utcnow().isoformat() + "Z"}
-        ).eq("id", user_id).execute()
-        sent += 1
-    log.info("mood-low sweep: %d nudged", sent)
+
+        # Tier 2 — mood_low (respects user toggle)
+        if _eligible_mood_low(profile, now, tz_name) and _evaluate_mood_low(
+            sb, user_id, now, tz_name
+        ):
+            persona = _fetch_persona(sb, user_id)
+            await _record_and_send(sb, profile, persona, "mood_low", tz_name)
+            sb.table("profiles").update(
+                {"last_mood_proactive_at": now_iso}
+            ).eq("id", user_id).execute()
+            low_sent += 1
+
+    log.info("mood-sweep: %d crisis, %d low-mood nudged", crisis_sent, low_sent)
 
 
 async def run_inactivity_sweep() -> None:

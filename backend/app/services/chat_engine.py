@@ -17,6 +17,8 @@ from google.genai import types
 
 from app.core.config import get_settings
 from app.core.prompts import CHAT_SYSTEM
+from supabase import Client
+
 from app.core.supabase_client import get_service_client
 from app.services._gemini_retry import with_retry
 from app.services.mood_events import record_mood_event
@@ -327,4 +329,41 @@ async def reply_to(user_id: str, content: str) -> tuple[str, str | None]:
         hidden_need=hidden_need,
     )
 
+    # Feedback loop: nếu user vừa được Lumina hỏi thăm (last_mood_proactive_at < 24h)
+    # và họ trả lời với sentiment cao (≥ 6) → reset cooldown để Lumina không lặp lại
+    # sự quan tâm khi họ đã ổn. Đây là RLHF nhẹ thông qua giao tiếp tự nhiên.
+    _maybe_reset_mood_cooldown(sb, user_id, sent_score)
+
     return reply, user_reaction
+
+
+def _maybe_reset_mood_cooldown(sb: Client, user_id: str, sent_score: Any) -> None:
+    """If the user came back with positive sentiment within 24h of a mood-low push,
+    clear last_mood_proactive_at so the next genuine low day can re-trigger sooner."""
+    try:
+        score = int(sent_score) if isinstance(sent_score, (int, float)) else None
+    except (TypeError, ValueError):
+        score = None
+    if score is None or score < 6:
+        return
+
+    res = (
+        sb.table("profiles")
+        .select("last_mood_proactive_at")
+        .eq("id", user_id)
+        .single()
+        .execute()
+    )
+    last_str = (res.data or {}).get("last_mood_proactive_at") if res.data else None
+    if not isinstance(last_str, str):
+        return
+    try:
+        last_at = datetime.fromisoformat(last_str.replace("Z", "+00:00"))
+    except ValueError:
+        return
+    from datetime import timezone as _tz
+    if datetime.now(_tz.utc) - last_at > timedelta(hours=24):
+        return  # too old — don't bother resetting
+
+    sb.table("profiles").update({"last_mood_proactive_at": None}).eq("id", user_id).execute()
+    log.info("mood-low cooldown reset for %s (positive feedback %d)", user_id, score)
