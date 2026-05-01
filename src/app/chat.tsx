@@ -5,6 +5,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -20,6 +21,12 @@ import { useUserPersona } from '@/hooks/use-persona';
 import { useAuthStore } from '@/stores/auth-store';
 import { colors, radius, spacing, typography } from '@/theme';
 import type { ChatMessage } from '@/types';
+
+const QUICK_EMOJIS = [
+  '😊', '😂', '🥰', '😍', '😘', '🤗', '😴', '😢',
+  '🥲', '😭', '😎', '🤔', '😅', '😋', '🥺', '🙃',
+  '❤️', '🔥', '✨', '🌸', '🌙', '☕', '🍀', '⭐',
+];
 
 const REACTIONS: { key: NonNullable<ChatMessage['reaction']>; emoji: string }[] = [
   { key: 'love', emoji: '❤️' },
@@ -50,6 +57,7 @@ function ChatScreenInner() {
   const { turns, send, setReaction, pending } = useChat(userId);
   const [draft, setDraft] = useState('');
   const [reactionFor, setReactionFor] = useState<string | null>(null);
+  const [emojiBarOpen, setEmojiBarOpen] = useState(false);
   const listRef = useRef<FlatList<ChatMessage>>(null);
 
   const aiName = persona?.ai_name || 'Lumina';
@@ -139,7 +147,43 @@ function ChatScreenInner() {
           onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
         />
 
+        {emojiBarOpen ? (
+          <View style={styles.emojiBar}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.emojiBarContent}
+            >
+              {QUICK_EMOJIS.map((e) => (
+                <Pressable
+                  key={e}
+                  onPress={() => setDraft((d) => d + e)}
+                  style={({ pressed }) => [
+                    styles.emojiCell,
+                    pressed && styles.emojiCellPressed,
+                  ]}
+                  accessibilityLabel={`Chèn ${e}`}
+                >
+                  <Text style={styles.emojiCellText}>{e}</Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+          </View>
+        ) : null}
+
         <View style={[styles.inputRow, { paddingBottom: insets.bottom + spacing.sm }]}>
+          <Pressable
+            onPress={() => setEmojiBarOpen((v) => !v)}
+            style={styles.emojiToggle}
+            accessibilityLabel="Mở emoji"
+            hitSlop={6}
+          >
+            <Ionicons
+              name={emojiBarOpen ? 'close-circle' : 'happy-outline'}
+              size={26}
+              color={emojiBarOpen ? colors.accent : colors.textSecondary}
+            />
+          </Pressable>
           <TextInput
             style={styles.input}
             value={draft}
@@ -151,6 +195,7 @@ function ChatScreenInner() {
             submitBehavior="blurAndSubmit"
             returnKeyType="send"
             onSubmitEditing={onSend}
+            onFocus={() => setEmojiBarOpen(false)}
           />
           <Pressable
             onPress={onSend}
@@ -351,15 +396,45 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 20,
   },
+  emojiBar: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceAlt,
+  },
+  emojiBarContent: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    gap: spacing.xs,
+  },
+  emojiCell: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.xs,
+  },
+  emojiCellPressed: {
+    backgroundColor: colors.surface,
+    transform: [{ scale: 0.92 }],
+  },
+  emojiCellText: { fontSize: 24 },
+  emojiToggle: {
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'flex-end',
+  },
   inputRow: {
     flexDirection: 'row',
+    alignItems: 'flex-end',
     gap: spacing.sm,
     paddingHorizontal: spacing.md,
     paddingTop: spacing.sm,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
     backgroundColor: colors.surface,
-    alignItems: 'flex-end',
   },
   input: {
     flex: 1,
