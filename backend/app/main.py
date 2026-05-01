@@ -85,8 +85,19 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         settings.daily_package_hour,
         settings.scheduler_timezone,
     )
-    # Recover any photos that got stuck during a previous restart.
-    asyncio.create_task(retry_stuck_photos())
+
+    # Recover stuck photos AFTER /health has had a chance to respond.
+    # On Render free tier, accepting traffic ASAP is critical so the platform
+    # doesn't time out the health check while we're chatting with Supabase.
+    async def _delayed_recovery() -> None:
+        await asyncio.sleep(15)
+        try:
+            await retry_stuck_photos()
+        except Exception as exc:  # noqa: BLE001
+            log.warning("delayed photo recovery failed: %s", exc)
+
+    asyncio.create_task(_delayed_recovery())
+
     try:
         yield
     finally:
