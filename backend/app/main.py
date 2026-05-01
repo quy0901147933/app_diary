@@ -15,6 +15,7 @@ from app.services.daily_packager import package_all_users
 from app.services.photo_retry import retry_stuck_photos
 from app.services.proactive import (
     run_inactivity_sweep,
+    run_mood_low_sweep,
     run_morning_ritual,
     run_night_recap,
 )
@@ -65,10 +66,21 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         max_instances=1,
         coalesce=True,
     )
+    # Mood-low proactive empathy: once a day at 20:00 local, find users whose
+    # 3-day average sentiment < 4 and gently nudge them. Has 48h cooldown built-in.
+    scheduler.add_job(
+        run_mood_low_sweep,
+        CronTrigger(hour=20, minute=0),
+        id="mood-low-sweep",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
     scheduler.start()
     log.info(
         "scheduler armed: daily-package @ %02d:00 · photo-retry every 120s · "
-        "morning-ritual hourly · night-recap @ %02d:15 · inactivity every 2h (tz=%s)",
+        "morning-ritual hourly · night-recap @ %02d:15 · inactivity every 2h · "
+        "mood-low @ 20:00 (tz=%s)",
         settings.daily_package_hour,
         settings.daily_package_hour,
         settings.scheduler_timezone,
