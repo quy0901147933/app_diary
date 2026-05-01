@@ -6,7 +6,10 @@ optional auto-reaction the AI puts on the user's latest message.
 
 import json
 import logging
+from collections import Counter, defaultdict
+from datetime import date, datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from google import genai
 from google.genai import errors as genai_errors
@@ -24,6 +27,7 @@ log = logging.getLogger("chat")
 PHOTO_LIMIT = 12
 BLOG_LIMIT = 5
 HISTORY_LIMIT = 16
+MOOD_TIMELINE_DAYS = 7
 
 
 def _load_persona(user_id: str) -> dict[str, Any] | None:
@@ -33,6 +37,82 @@ def _load_persona(user_id: str) -> dict[str, Any] | None:
 def _persona_directive(p: dict[str, Any] | None) -> str:
     """Backward-compat wrapper: chat_engine internals + proactive.py import this."""
     return build_persona_block(p, mode="chat")
+
+
+def _build_mood_timeline(user_id: str) -> str:
+    """Render emotional momentum across the last few days as a chained arrow.
+
+    Letting Lumina see "[3 ngày trước: Hào hứng] → [Hôm qua: Hơi mệt] → [Hôm nay: Áp lực]"
+    means she replies in context of the trajectory, not just the latest message.
+    """
+    settings = get_settings()
+    tz = ZoneInfo(settings.scheduler_timezone)
+    today_local = datetime.now(tz).date()
+    earliest = today_local - timedelta(days=MOOD_TIMELINE_DAYS - 1)
+
+    sb = get_service_client()
+    res = (
+        sb.table("mood_events")
+        .select("sentiment_score, emotion_tag, hidden_need, created_at")
+        .eq("user_id", user_id)
+        .gte("created_at", earliest.isoformat())
+        .order("created_at", desc=False)
+        .execute()
+    )
+    rows = res.data or []
+    if not rows:
+        return ""
+
+    grouped: dict[date, list[dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        created = row.get("created_at")
+        if not isinstance(created, str):
+            continue
+        try:
+            local_day = (
+                datetime.fromisoformat(created.replace("Z", "+00:00"))
+                .astimezone(tz)
+                .date()
+            )
+        except ValueError:
+            continue
+        grouped[local_day].append(row)
+
+    if not grouped:
+        return ""
+
+    chain: list[str] = []
+    for d in sorted(grouped.keys()):
+        events = grouped[d]
+        scores = [e["sentiment_score"] for e in events if isinstance(e.get("sentiment_score"), (int, float))]
+        avg = sum(scores) / len(scores) if scores else None
+        tags = Counter(e["emotion_tag"] for e in events if isinstance(e.get("emotion_tag"), str))
+        dominant = tags.most_common(1)[0][0] if tags else "—"
+
+        # Latest hidden_need for that day — most informative single signal.
+        latest_need: str | None = None
+        for e in reversed(events):
+            need = e.get("hidden_need")
+            if isinstance(need, str) and need.strip():
+                latest_need = need.strip()
+                break
+
+        delta = (today_local - d).days
+        if delta == 0:
+            label = "Hôm nay"
+        elif delta == 1:
+            label = "Hôm qua"
+        else:
+            label = f"{delta} ngày trước"
+
+        score_part = f"{avg:.1f}/10" if avg is not None else "—"
+        seg = f"[{label}: {dominant} ({score_part})"
+        if latest_need:
+            seg += f" — \"{latest_need[:80]}\""
+        seg += "]"
+        chain.append(seg)
+
+    return "DIỄN BIẾN TÂM LÝ GẦN ĐÂY (cũ → mới):\n" + " → ".join(chain)
 
 
 def _build_rag_context(user_id: str) -> str:
@@ -152,10 +232,13 @@ async def reply_to(user_id: str, content: str) -> tuple[str, str | None]:
     persona = _load_persona(user_id)
     persona_block = _persona_directive(persona)
     rag = _build_rag_context(user_id)
+    mood_timeline = _build_mood_timeline(user_id)
 
     system = CHAT_SYSTEM
     if persona_block:
         system = persona_block + "\n\n" + system
+    if mood_timeline:
+        system += "\n\n" + mood_timeline
     if rag:
         system += "\n\nNGỮ CẢNH NGƯỜI DÙNG (chỉ tham khảo, không liệt kê):\n" + rag
 
