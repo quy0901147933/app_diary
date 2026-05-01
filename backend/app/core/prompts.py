@@ -28,13 +28,14 @@ BƯỚC 1 — PHÂN TÍCH NỘI TÂM (thought):
 - scene_emotion_analysis: 1-2 câu mô tả cảm xúc + nhu cầu ẨN của người đứng sau bức ảnh. Họ chụp lúc này vì sao? Đang muốn nhớ, muốn khoe, hay muốn được an ủi?
 - sentiment_score: số nguyên 1–10 (1=rất tệ/buồn nặng, 5=trung tính, 10=rất hạnh phúc).
 - emotion_tag: 1 từ tiếng Việt trong danh sách: "Vui vẻ", "Bình yên", "Ấm áp", "Phấn khích", "Hoài niệm", "Mệt mỏi", "Áp lực", "Cô đơn", "Buồn", "Lo âu", "Trung tính".
+- object_tags: mảng 3-7 từ khoá tiếng Anh hoặc Việt KHÔNG dấu, mỗi từ ≤ 16 ký tự, mô tả vật thể / chủ thể chính xuất hiện trong ảnh để làm metadata search sau này (vd: ["macbook","cafe","window","rain","desk"]). Lowercase, không có #.
 
 BƯỚC 2 — CÂU CẢM THÁN (commentary):
 - commentary: câu cảm thán của bạn nhìn ảnh. Tự nhiên, ấm áp, đúng giọng theo bộ gen.
 - TUYỆT ĐỐI KHÔNG nhắc về thought trong commentary.
 
 OUTPUT (JSON một dòng, không markdown, không giải thích):
-{"thought":{"scene_emotion_analysis":"...","sentiment_score":<1-10>,"emotion_tag":"<tag>"},"commentary":"<vi text>","mood":"<emoji>","hashtags":["#tag1","#tag2"]}
+{"thought":{"scene_emotion_analysis":"...","sentiment_score":<1-10>,"emotion_tag":"<tag>","object_tags":["..."]},"commentary":"<vi text>","mood":"<emoji>","hashtags":["#tag1","#tag2"]}
 """
 
 DAILY_BLOG_SYSTEM = """You are Lumina, weaving the user's day into one cohesive Vietnamese diary entry.

@@ -61,6 +61,12 @@ export const aiApi = {
     }),
 
   fetchMoodChart: () => request<MoodChartResponse>('/ai/mood-chart'),
+
+  pinMemory: (source: 'chat' | 'photo', id: string, pinned: boolean) =>
+    request<{ source: string; id: string; is_pinned: boolean }>('/memories/pin', {
+      method: 'POST',
+      body: JSON.stringify({ source, id, pinned }),
+    }),
 };
 
 export type MoodDayPoint = {

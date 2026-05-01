@@ -244,16 +244,16 @@ async def _retrieve_emotional_memories(
     sb = get_service_client()
     try:
         res = sb.rpc(
-            "match_emotional_memories",
+            "match_unified_memories",
             {
                 "p_user_id": user_id,
                 "p_query_embedding": embedding,
-                "p_match_count": 3,
-                "p_min_similarity": 0.55,
+                "p_match_count": 5,
+                "p_min_similarity": 0.5,
             },
         ).execute()
     except Exception as exc:  # noqa: BLE001
-        log.warning("emotional-RAG search failed: %s", exc)
+        log.warning("unified-memory search failed: %s", exc)
         return "", embedding
 
     rows = res.data or []
@@ -263,21 +263,29 @@ async def _retrieve_emotional_memories(
     lines: list[str] = []
     for r in rows:
         when = (r.get("created_at") or "")[:10]
+        source = r.get("source") or "?"
         emotion = r.get("emotion_tag") or "—"
         score = r.get("sentiment_score")
         score_str = f"{score}/10" if isinstance(score, (int, float)) else "—"
-        sim = r.get("similarity")
-        sim_str = f"{sim:.2f}" if isinstance(sim, (int, float)) else "—"
+        final = r.get("final_score")
+        score_str2 = f"{final:.2f}" if isinstance(final, (int, float)) else "—"
+        pinned = "📌" if r.get("is_pinned") else ""
         content_excerpt = (r.get("content") or "")[:140].replace("\n", " ")
         need = (r.get("hidden_need") or "").strip()
+        objs = r.get("object_tags") or []
 
-        seg = f"- [{when} · {emotion} · {score_str} · sim={sim_str}] \"{content_excerpt}\""
+        kind = "Trò chuyện" if source == "chat" else "Khoảnh khắc"
+        head = f"- {pinned}[{when} · {kind} · {emotion} · {score_str} · score={score_str2}]"
+        seg = f'{head} "{content_excerpt}"'
+        if isinstance(objs, list) and objs:
+            seg += f" (vật thể: {', '.join(objs[:5])})"
         if need:
             seg += f"\n    └ Lúc đó nhu cầu ẩn: {need[:100]}"
         lines.append(seg)
 
     block = (
-        "KÝ ỨC CẢM XÚC TƯƠNG TỰ (chỉ tham khảo để hiểu pattern, KHÔNG quote nguyên văn):\n"
+        "KÝ ỨC CẢM XÚC TƯƠNG TỰ (đã áp dụng decay theo thời gian + ưu tiên ký ức 📌 ghim; "
+        "chỉ tham khảo để hiểu pattern, KHÔNG quote nguyên văn):\n"
         + "\n".join(lines)
     )
     return block, embedding

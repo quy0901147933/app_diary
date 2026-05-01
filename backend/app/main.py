@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
-from app.routers import blog, chat, mood, photos
+from app.routers import blog, chat, memories, mood, photos
 from app.services.daily_packager import package_all_users
 from app.services.photo_retry import retry_stuck_photos
 from app.services.proactive import (
@@ -109,6 +109,7 @@ def create_app() -> FastAPI:
     app.include_router(blog.router)
     app.include_router(chat.router)
     app.include_router(mood.router)
+    app.include_router(memories.router)
 
     @app.get("/health")
     def health() -> dict[str, str]:

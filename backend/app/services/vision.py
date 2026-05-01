@@ -124,14 +124,25 @@ async def analyze_photo(
     hidden_need_raw = thought.get("scene_emotion_analysis")
     hidden_need = hidden_need_raw if isinstance(hidden_need_raw, str) else None
 
+    raw_objects = thought.get("object_tags") or parsed.get("object_tags") or []
+    object_tags: list[str] = []
+    if isinstance(raw_objects, list):
+        for t in raw_objects[:7]:
+            if not isinstance(t, str):
+                continue
+            cleaned = t.strip().lower().lstrip("#")[:16]
+            if cleaned:
+                object_tags.append(cleaned)
+
     log.info(
-        "vision via %s → %.40s... mood=%s tags=%s sent=%s/%s persona=%s",
+        "vision via %s → %.40s... mood=%s tags=%s sent=%s/%s objs=%s persona=%s",
         used_model,
         commentary,
         mood,
         hashtags,
         sentiment_score,
         emotion_tag,
+        object_tags[:3],
         bool(persona),
     )
     return {
@@ -141,6 +152,7 @@ async def analyze_photo(
         "sentiment_score": sentiment_score,
         "emotion_tag": emotion_tag,
         "hidden_need": hidden_need,
+        "object_tags": object_tags,
     }
 
 
