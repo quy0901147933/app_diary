@@ -15,6 +15,7 @@ import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Updates from 'expo-updates';
 import { Avatar } from '@/components/avatar';
 import { AvatarPickerSheet } from '@/components/avatar-picker-sheet';
 import { useProfile, useSaveProfile } from '@/hooks/use-profile';
@@ -127,6 +128,26 @@ export default function SettingsScreen() {
       Alert.alert('Đã lưu', 'Cài đặt đã được cập nhật.');
     } catch (e) {
       Alert.alert('Lỗi', e instanceof Error ? e.message : 'Thử lại nhé.');
+    }
+  }
+
+  async function checkForUpdate() {
+    try {
+      const update = await Updates.checkForUpdateAsync();
+      if (!update.isAvailable) {
+        Alert.alert('Đã là bản mới nhất', 'Ứng dụng đang chạy phiên bản mới nhất.');
+        return;
+      }
+      Alert.alert('Có bản cập nhật', 'Đang tải xuống phiên bản mới…');
+      await Updates.fetchUpdateAsync();
+      Alert.alert(
+        'Sẵn sàng cập nhật',
+        'Ứng dụng sẽ khởi động lại để áp dụng phiên bản mới.',
+        [{ text: 'Khởi động lại', onPress: () => Updates.reloadAsync() }],
+      );
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Không kiểm tra được.';
+      Alert.alert('Lỗi cập nhật', msg);
     }
   }
 
@@ -244,6 +265,13 @@ export default function SettingsScreen() {
               thumbColor={colors.surface}
             />
           </View>
+
+          <Text style={[styles.sectionTitle, { marginTop: spacing.xl }]}>Phiên bản</Text>
+          <Pressable style={styles.linkRow} onPress={checkForUpdate}>
+            <Ionicons name="cloud-download-outline" size={20} color={colors.textPrimary} />
+            <Text style={styles.linkText}>Kiểm tra cập nhật</Text>
+            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+          </Pressable>
 
           <Text style={[styles.sectionTitle, { marginTop: spacing.xl }]}>Tài khoản</Text>
           <Pressable style={styles.linkRow} onPress={logout}>
