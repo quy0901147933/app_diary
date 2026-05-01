@@ -4,6 +4,7 @@ NOT realtime/streaming. Returns one complete reply per request, plus an
 optional auto-reaction the AI puts on the user's latest message.
 """
 
+import asyncio
 import json
 import logging
 from collections import Counter, defaultdict
@@ -403,16 +404,21 @@ async def reply_to(user_id: str, content: str) -> tuple[str, str | None]:
         except Exception as exc:  # noqa: BLE001
             log.warning("failed to attach embedding/emotion to %s: %s", user_msg_id, exc)
 
-    # Embed the assistant reply too (background-friendly: don't block, ignore failure).
+    # Embed the assistant reply in the background — never block the user-facing
+    # response. The chat client only needs `reply`; embedding is just metadata
+    # for future RAG, so it can land a few seconds after the HTTP response.
     if assistant_msg_id:
-        try:
-            assistant_emb = await embed_text(reply)
-            if assistant_emb is not None:
-                sb.table("chat_messages").update({"embedding": assistant_emb}).eq(
-                    "id", assistant_msg_id
-                ).execute()
-        except Exception as exc:  # noqa: BLE001
-            log.debug("assistant embed skipped: %s", exc)
+        async def _embed_assistant_bg(msg_id: str, text: str) -> None:
+            try:
+                emb = await embed_text(text)
+                if emb is not None:
+                    sb.table("chat_messages").update({"embedding": emb}).eq(
+                        "id", msg_id
+                    ).execute()
+            except Exception as exc:  # noqa: BLE001
+                log.debug("bg assistant embed skipped: %s", exc)
+
+        asyncio.create_task(_embed_assistant_bg(assistant_msg_id, reply))
 
     record_mood_event(
         user_id=user_id,

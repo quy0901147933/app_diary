@@ -1,3 +1,5 @@
+import asyncio
+import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -9,6 +11,8 @@ from app.services.embeddings import embed_text
 from app.services.mood_events import record_mood_event
 from app.services.persona import fetch_persona
 from app.services.vision import analyze_photo
+
+log = logging.getLogger("photos")
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 
@@ -56,21 +60,7 @@ async def post_comment(
     if isinstance(object_tags, list) and object_tags:
         update_payload["object_tags"] = object_tags
 
-    # Embed the commentary so the photo joins the unified memory pool.
-    # Combine commentary + tags so search hits both narrative and object words.
-    embed_input_parts = [analysis["commentary"]]
-    if object_tags:
-        embed_input_parts.append(" ".join(object_tags))
-    embed_input = " ".join(p for p in embed_input_parts if p).strip()
-    if embed_input:
-        try:
-            emb = await embed_text(embed_input)
-            if emb is not None:
-                update_payload["embedding"] = emb
-        except Exception as exc:  # noqa: BLE001
-            # Embedding is best-effort — never block the comment write.
-            update_payload.pop("embedding", None)
-
+    # Write commentary immediately so the user sees a fast result.
     sb.table("photos").update(update_payload).eq("id", body.photo_id).execute()
 
     record_mood_event(
@@ -81,6 +71,25 @@ async def post_comment(
         emotion_tag=analysis.get("emotion_tag"),
         hidden_need=analysis.get("hidden_need"),
     )
+
+    # Embed in the background — saves ~1-2s on user-facing latency.
+    embed_input_parts = [analysis["commentary"]]
+    if object_tags:
+        embed_input_parts.append(" ".join(object_tags))
+    embed_input = " ".join(p for p in embed_input_parts if p).strip()
+
+    if embed_input:
+        photo_id = body.photo_id
+
+        async def _embed_photo_bg(pid: str, text: str) -> None:
+            try:
+                emb = await embed_text(text)
+                if emb is not None:
+                    sb.table("photos").update({"embedding": emb}).eq("id", pid).execute()
+            except Exception as exc:  # noqa: BLE001
+                log.debug("bg photo embed skipped %s: %s", pid, exc)
+
+        asyncio.create_task(_embed_photo_bg(photo_id, embed_input))
 
     return CommentResponse(
         photo_id=body.photo_id,
